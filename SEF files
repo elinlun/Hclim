@@ -1,0 +1,106 @@
+The Station Exchange Format (SEF)
+Breadcrumb
+Home  Node
+This is a file format specification for newly-digitised historical weather observations. It has been produced to support the work of the Copernicus Data Rescue Service in particular to allow people rescuing observations to present them for widespread use in a simple but standard format.
+
+This format is for land observations from fixed stations. Marine observations, and moving observing platforms, should use the IMMA format instead.
+
+What is it, and why?
+Weather data rescue is the process of getting historical weather observations off paper, into digital formats, and into use. This is typically done in two steps:
+
+A transcription step which finds observations archived on paper and produces digital versions of those observations - typically as Excel spreadsheets or in a similar format.
+A database-building step which converts the new digital observations into the format and schema used by an observations database, and adds the observations to the database.
+These two steps are usually done by different people: the first by a large group of observation experts (transcribers), each interested in a different set of to-be-digitised observations; the second by a small group of synthesisers trying to make the best possible database. The split between the steps causes problems: the output of step one (variably-structured Excel spreadsheets) is poorly suited as the input of step 2. We cannot ask the transcribers to produce database-ready output, because this requires them to know too much about the precise and ideosyncratic details of each database, and we cannot expect the synthesisers to work with millions of variably-structured Excel spreadsheets - partly because they would have to learn too much about the ideosyncrasies of each observation source, and partly because there are many fewer synthesisers than transcribers. The practical effect of this is that observations pile up in a transcribed-but-unusable state, and it takes too long to get them into use.
+
+The Station Exchange Format (SEF) is a proposed new output for the transcription step. It will eliminate the bottleneck between the steps by specifying a single data format that is suitable both as the output of step one and the input to step 2. This means the format must have two, somewhat contradictory, properties:
+
+It must be machine readable with NO human involvement – so it needs all the necessary metadata in an unambiguous arrangement. Otherwise it is too expensive for synthesizers to read.
+It must be easy for non-experts to read, understand, and create.
+If SEF is successful, the problems of reading data can be confined to a couple of software libraries. So it needs to be possible to read it unambiguously, but it does not matter how slow or difficult this is – it matters a great deal if it is hard to create. The best format will adequate for readers, but optimised for creators. That means plain text, editable in a text editor, editable in a spreadsheet format, opens in the right program when double clicked; easy to read and write in Python, R, and even Fortran.
+
+The current design tries to be both simple enough to be obvious, and powerful enough to be useful, by having a core set of headers and columns which are obvious, and an arbitrarily extensible metadata section. It still usually requires basic programming skills from the transcriber's side, which might be a significant hurdle for some users. Tutorials are provided to lower this hurdle.
+
+The file format
+SEF files look like this:
+
+sef_example1
+One SEF file contains observations of one variable from one station. It is a text file encoded as UTF8. It is a tab-separated values file and should have a .tsv extension. This means it can be easily viewed and edited in any text editor or spreadsheet program (though care should be taken to preserve the tab structure and text encoding).
+
+Header
+The first 12 lines of the file are a series of headers, each given as a name::value pair separated by a tab. They must be in the order given. Missing values can be given as NA or left blank. The SEF version number must be present.
+
+SEF: The first three characters in the file must be SEF. The associated value is the semantic version of the format used. This enables software to recognise the format and read the rest of the file correctly. At the moment, version 1.0.0 is in use.
+
+ID: This is the machine readable name of the station. It may contain only lower-case or upper-case Latin letters, numbers or the characters: - (dash), _ (underscore) or . (full stop). It must not contain blanks. There is no length limit.
+
+Name: Station name - any string (except no tabs or carriage returns). This is the human readable name of the station.
+
+Lat: Latitude of the station (degrees north as decimal number).
+
+Lon: Longitude of the station (degrees east as decimal number).
+
+Alt: Altitude of the station (meters above sea-level).
+
+Source: Source identifier. This is for making collections of SEF files and identifies a group of files from the same source. It will be set by the collector. Any string (except no tabs or carriage returns).
+
+Link: Where to find additional metadata (a web address). SEF users are strongly recommended to add their metadata to the C3S DRS metadata registry and then link to the appropriate page in that service.
+
+Vbl: Name of the variable included in the file. There is a recommended list of standard variable names. Use this if possible.
+
+Stat: What statistic (mean, max, min, ...) is reported from the variable. There is a recommended list of standard statistics. Use this if possible.
+
+Units: Units in which the variable value is given in the file (e.g. 'hPa', 'Pa', 'K', 'm/s'). Where possible, this should be compliant with UDUNITS-2. The units in which the values were originally measured can be given in the Meta column (see Data table section).
+
+Meta: Anything else. Pipe-separated (|) string of metadata entries. Each entry may be any string (except no tabs, pipes, or carriage returns). There is a standard list of meaningful entries, but other entries can be added as necessary. Metadata specified here is assumed to apply to all observations in this file, unless overwritten by the observation-specific metadata entry.
+
+Data table
+Lines 13 and onward in the file are a table of observations. Line 13 is a header, lines 14 and on are observations. Missing values can be given as NA or left blank. The table must contain these columns in this order:
+
+Year: Year in which the observation was made (UTC). An integer.
+
+Month: Month in which the observation was made (UTC). An integer (1-12). For annual data, it is recommended to leave this column empty (or NA) when referring to calendar years.
+
+Day: Day of month in which the observation was made (UTC). An integer (1-31). For monthly, seasonal, or annual data, it is recommended to leave this column empty (or NA) when referring to calendar months or years.
+
+Hour: Hour at which the observation was made (UTC). An integer (0-24). The use of 24 is recommended for daily values calculated from midnight to midnight (UTC). This is to avoid ambiguities in the date.
+
+Minute: Minute at which the observation was made (UTC). An integer (0-59).
+
+Period: Time period of observation (instantaneous, sum over previous 24 hours, ...). There is a table of meaningful codes.
+
+Value: The observation value. It is recommended to round the value to a meaningful number of decimal places.
+
+Meta: Anything else. Pipe-separated (|) string of metadata entries. Each entry may be any string (except no tabs, pipes, or carriage returns). There is a standard list of meaningful entries, but other entries can be added as necessary. Metadata specified here only applies to this observation, and overrides any file-wide specification.
+
+Examples
+Examples of SEF files, alongside the original digitisation spreadsheets, metadata, and conversion scripts, can be found here.
+
+There is also a tutorial on how to create a SEF file starting from an Excel sheet.
+
+Station relocations and homogenised data
+When a station is relocated and gets new coordinates, a new SEF file should be created.
+
+Even though the SEF was principally designed for raw data, it is also possible to use it for homogenised data. Specific metadata entries have been pre-defined for that. In the case of homogenised data, a single SEF file is sufficient. The coordinates indicated in the header must be those of the location with respect to which the data have been adjusted (usually the most recent location).
+
+R Package
+R functions are provided within the package dataresqc to facilitate reading and writing SEF files. You can install the package from the R command line with:
+
+   install.packages("dataresqc")
+
+and load them with:
+
+   library(dataresqc)
+
+In particular:
+
+read_sef reads a SEF file into a R data frame.
+read_meta reads one or more fields from the SEF header.
+write_sef transforms a R data frame into a SEF file.
+check_sef verify the compliance of a SEF file to these guidelines.
+Python API
+Functions to manipulate SEF files are also available for Python here.
+
+Authors and acknowledgements
+This document was created by Philip Brohan (UKMO) and is currently maintained by Yuri Brugnara (University of Bern; yuri.brugnara@giub.unibe.ch). The file format specification is the responsibility of the Copernicus Data Rescue Service.
+
+https://datarescue.climate.copernicus.eu/node/80
