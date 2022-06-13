@@ -1,0 +1,69 @@
+## Perform basic QC on monthly data in SEF (outliers, range)
+## Produce a single text file with all flagged data
+
+library(dataresqc)
+
+inpath <- "/scratch3/PALAEO-RA/DataRescue/Projects/Europe/4_Formatted/Chur/"
+outpath <- "./"
+variable <- "nr"
+
+out <- data.frame(id=character(), year=numeric(), month=numeric(), value=numeric())
+
+files <- list.files(inpath, pattern=paste0("_",variable), full.names=TRUE)
+for (f in files) {
+  x <- read_sef(f)
+  st <- read_meta(f)["id"]
+  print(st, quote=FALSE)
+  x <- x[which(!is.na(x$Value)), ]
+  ## Outliers (> 4 sd)
+  if (nrow(x) >= 60) { # require at least 5 years of data
+    x_mean <- aggregate(x$Value, list(x$Month), mean, na.rm=TRUE)
+    x_thr <- aggregate(x$Value, list(x$Month), function(x) 4*sd(x,na.rm=TRUE))
+    for (i in 1:nrow(x)) {
+      j <- which(x_mean[,1]==x$Month[i])
+      if (!is.na(x_thr$x[j])) {
+        if (x$Value[i] < (x_mean$x[j]-x_thr$x[j]) |  x$Value[i] > (x_mean$x[j]+x_thr$x[j])) {
+          out <- rbind(out, data.frame(id=st, year=x$Year[i], month=x$Month[i], value=x$Value[i]))
+        }
+      }
+    }
+  }
+  ## Range
+  if (x$Var[1] == "ta") {
+    i <- which(x$Value<(-45) |  x$Value>40)
+    if (length(i) > 0) {
+      out <- rbind(out, data.frame(id=rep(st,length(i)), year=x$Year[i], month=x$Month[i], value=x$Value[i]))
+    }
+  }
+  if (x$Var[1] == "p") {
+    i <- which(x$Value<800 |  x$Value>1050)
+    if (length(i) > 0) {
+      out <- rbind(out, data.frame(id=rep(st,length(i)), year=x$Year[i], month=x$Month[i], value=x$Value[i]))
+    }
+  }
+  if (x$Var[1] == "mslp") {
+    i <- which(x$Value<980 |  x$Value>1050)
+    if (length(i) > 0) {
+      out <- rbind(out, data.frame(id=rep(st,length(i)), year=x$Year[i], month=x$Month[i], value=x$Value[i]))
+    }
+  }
+  if (x$Var[1] == "rr") {
+    i <- which(x$Value<0 |  x$Value>900)
+    if (length(i) > 0) {
+      out <- rbind(out, data.frame(id=rep(st,length(i)), year=x$Year[i], month=x$Month[i], value=x$Value[i]))
+    }
+  }
+  if (x$Var[1] == "nr") {
+    i <- which(x$Value<0 |  x$Value>28)
+    if (length(i) > 0) {
+      out <- rbind(out, data.frame(id=rep(st,length(i)), year=x$Year[i], month=x$Month[i], value=x$Value[i]))
+    }
+  }  
+}
+
+## Remove duplicates
+out <- out[!duplicated(out),]
+cat(nrow(out), "flagged values\n")
+
+## Write output
+write.table(out, file=paste0(outpath,"qc_monthly.txt"), row.names=FALSE, quote=FALSE, sep="\t")
