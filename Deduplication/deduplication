@@ -1,0 +1,152 @@
+# De-duplication script (NB: there is a different script for pressure)
+library(dataresqc)
+library(geosphere)
+
+variable <- "TA"
+inpath <- paste0("/scratch3/PALAEO-RA/Instrumental/SEF/Monthly_means/",variable)
+outpath <- paste0("/scratch3/PALAEO-RA/Instrumental/SEF/Merged/",variable)
+inventory <- paste0("/scratch3/PALAEO-RA/Instrumental/SEF/Monthly_means/",variable,"_inventory.tsv")
+whitelist <- list.files("/scratch3/PALAEO-RA/Instrumental/SEF/Monthly/ISTI/Histalps") # for TA
+#whitelist <- list.files("/scratch3/PALAEO-RA/Instrumental/SEF/Monthly/EKF400", pattern="rr_monthly") # for RR
+#whitelist <- c() # for NR
+threshold <- 0.98
+
+setwd(inpath)
+
+# Read in inventory
+All.stations <- read.table(inventory, sep = "\t", quote = "", comment.char = "", header = T, stringsAsFactors=FALSE)
+
+# Filter stations in whitelist (for testing)
+#wl <- c()
+#for (filename in whitelist) wl <- append(wl, grep(filename,All.stations[,12]))
+#All.stations <- All.stations[wl,]
+
+### clean up coordinates
+lon = as.numeric(All.stations[,5])
+lat  = as.numeric(All.stations[,4])
+lon[lon==-999.9]=NA
+lat[lat==-999.9]=NA
+lon[lon==-9999]=NA
+lat[lat==-9999]=NA
+lat[lat==-99]=NA
+lat[lat>90]=NA
+
+# Initialize "output" tha thas the candidate station as columns and the neibhbours as rows 
+# This natrix will have NA if distances are >50 km and anomaly correlations if <50 km
+output=matrix(data = NA, nrow = length(All.stations$id), ncol = length(All.stations$id))
+
+
+## Part 1: Determine distance and correlations
+message("Finding duplicates...")
+for (i in 1:length(lon)){  # loop over candidates
+ if (i %in% seq(100,20000,100)) message(i)
+ candidate = read_sef(All.stations[i,12], all=TRUE)
+ candidate = candidate[!grepl("qc",candidate$Meta),] # exclude flagged values
+ if (sum(!is.na(candidate$Value))>11) { # need at least 12 non-missing values
+  avstand = distm(c(lon[i],lat[i]),cbind(lon,lat))
+  step1 = avstand[1,] < 50000 
+  cand.year=candidate$Year + (candidate$Month/12)
+  for (j in which(step1)){    # loop over neighbours <50 km; x= candidate station, y= neighbor station
+   y = read_sef(All.stations[j,12], all=TRUE)
+   y = y[!grepl("qc=",y$Meta),] # exclude flagged values
+   y.year = y$Year + (y$Month/12)
+   y.value = as.numeric(y$Value[match(cand.year, y.year, nomatch = F)])
+   x.value = as.numeric(candidate$Value[match(y.year, cand.year, nomatch = F)])
+   y.month = y$Month[match(cand.year, y.year, nomatch = F)]
+#   seas = cbind(cos(3.14159*(y.month/12)/180),sin(3.14159*(y.month/12)/180))
+   sel=which(!is.na(x.value)&!is.na(y.value))
+   if (length(sel)>24){
+#    x.res = lm(x.value[sel]~seas[sel,])$residuals
+#    y.res = lm(y.value[sel]~seas[sel,])$residuals
+    x.clim = aggregate(x.value[sel], list(y.month[sel]), mean)
+    y.clim = aggregate(y.value[sel], list(y.month[sel]), mean)
+    x.res = y.res = array(dim=length(sel))
+    for (im in unique(y.month[sel])) {
+      k = which(y.month[sel]==im)
+      x.res[k] = x.value[k] - x.clim$x[x.clim[,1]==im]
+      y.res[k] = y.value[k] - y.clim$x[y.clim[,1]==im]
+      }
+      output[j,i]=cor(x.res, y.res, use = "pairwise.complete.obs", method = "spearman")
+    }
+   }
+  }
+ }
+#save.image("/scratch3/PALAEO-RA/Instrumental/Scripts/corr-matrix.RData") # save correlation matrix on disk so it is not necessary to recalculate it every time
+#load("/scratch3/PALAEO-RA/Instrumental/Scripts/corr-matrix.RData") # load previously saved correlation matrix
+
+## Part 2: Merge series
+out.list <- NULL
+exclude <- 0
+message("Merging series...")
+for (i in 1:dim(output)[2]){
+ if (i %in% seq(100,20000,100)) message(i)
+ cat.list <- i
+ sel <- which(output[,i]>threshold)
+ sel <- sel[which(!sel%in%exclude)]
+ if ((!(i%in%exclude))&(length(sel)>0)){ 
+  start.list <- rep(NA,length(sel))
+#  cat.list <- NULL
+  date <- NULL
+  for (j in 1:length(sel)){
+   y = read_sef(All.stations[sel[j],12])
+   date <- c(date, y$Year + ((y$Month-1)/12))
+   filename <- strsplit(All.stations[sel[j],12],"/")[[1]]
+   filename <- filename[length(filename)]
+   start.list[j] <- ifelse(filename%in%whitelist, 0, min(y$Year))
+   }
+  undate <- sort(unique(date))
+  undate <- undate[!is.na(undate)]
+  out.year <- trunc(undate)
+  out.month <- ((undate*12)%%12)+1
+  out.value <- rep(NA,length(undate))
+  out.flag <- rep(NA,length(undate))
+  sel2 <- sel[order(start.list,decreasing=T)]
+  #if (length(sel2)>0) {
+   for (j in 1:length(sel2)) {
+    y <- read_sef(All.stations[sel2[j],12],all=T)
+    y <- y[which(!is.na(y$Value) & !is.na(y$Year)),]
+    datey <- y$Year + ((y$Month-1)/12)
+    filename <- strsplit(All.stations[sel2[j],12],"/")[[1]]
+    filename <- filename[length(filename)]
+    cat.list <- c(cat.list,filename)
+    out.value[match(datey,undate)] <- y$Value
+    out.flag[match(datey,undate)] <- y$Meta
+    if (All.stations[sel2[j],11] != "") out.flag[match(datey,undate)] <- 
+      paste(out.flag[match(datey,undate)],All.stations[sel2[j],11],sep="|")
+    out.flag[match(datey,undate)] <- paste0(out.flag[match(datey,undate)],"|file=",filename)
+    }
+  # }  
+  con <- file(All.stations[sel2[j],12],open="r")
+  line <- readLines(con,n=13)
+  close(con)
+  if (length(cat.list)>2) line[12] <- paste0("Meta","\t","Files=",paste(cat.list[2:length(cat.list)],collapse=";"))
+  writeLines(line,paste0(outpath,"/",gsub(".tsv","_",filename),"merged.tsv"), sep = "\n")
+  out.flag <- sub("^[|]", "", out.flag) # remove leading | if any
+  write.table(cbind(out.year,out.month,NA,NA,NA,"month",out.value,out.flag),paste0(outpath,"/",gsub(".tsv","_",filename),"merged.tsv"),
+              append=T,sep="\t",row.names=F,col.names=F,quote=F)
+  exclude <- c(exclude,sel)
+  }
+ out.list <- rbind(out.list, paste(cat.list,collapse=";"))
+ }
+setwd(outpath)
+write.table(out.list, "out.list.txt", sep=" ", row.names=F, col.names=F, quote=F)
+
+## Write inventory
+inventory <- data.frame(id=character(), station=character(), variable=character(), 
+                        latitude=numeric(), longitude=numeric(), elevation=numeric(), 
+                        start=numeric(), end=numeric(), stat=character(), 
+                        source=character(), meta=character(), filepath=character(), 
+                        stringsAsFactors=FALSE)
+files <- list.files(outpath, pattern="tsv", full.names=TRUE)
+for (f in files) {
+  x <- read_sef(f, all=TRUE)
+  meta <- read_meta(f)
+  inventory <- rbind(inventory,
+                     data.frame(id=meta["id"], station=meta["name"], variable=meta["var"],
+                                latitude=meta["lat"], longitude=meta["lon"], elevation=meta["alt"],
+                                start=min(x$Year), end=max(x$Year), stat=meta["stat"],
+                                source=meta["source"], meta=meta["meta"], filepath=f, 
+                                stringsAsFactors=FALSE))
+}
+inventory <- inventory[order(inventory$id), ]
+write.table(inventory, file=paste0(outpath,"/../",toupper(variable),"_inventory.tsv"), sep="\t", quote=FALSE, row.names=FALSE)
