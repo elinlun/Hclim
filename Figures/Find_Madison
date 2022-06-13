@@ -1,0 +1,34 @@
+library(MAP)
+setwd("~/UniBe/Resultat")
+# Lag en kart fra longitud -10 til 50 og latitud 20 til 50:
+  map(x=c(-130,-50), y=c(20,70))
+# Da kan du etterpå legge inn stasjoner ved å bruke funksjonen matpoints, her med eksempelkoordinater for stasjoner:
+stationlon <- c(-89.38, -85.3, -83.4, -97.5)
+stationlat <- c(43.07, 38.7, 54, 41.8)
+
+madisonlon <-c(-89.38)
+madisonlat <-c(43.07)
+
+#nebraskalon <-c(-97.5)
+#nebraskalat<-c(41.8)
+
+matpoints(x=stationlon,y=stationlat, pch=19, col = "black")
+matpoints(x=madisonlon,y=madisonlat, pch=19, col = "red")
+#matpoints(x=nebraskalon,y=nebraskalat, pch=19, col = "blue")
+# pch betyr plot character. 19 er en rund punkt, sånn her .. Flere andre her.
+
+# Hvis du vil ha et mindre område vil du fort merke at default-karten ikke er spesielt høyoppløst, og landene vil bli veldig grove. Da kan du i stedet lese inn et datasettet "worldHires" fra R-pakken mapdata.
+# Les inn mapdata:
+library("mapdata")
+# hvis du ikke har den kan du installere ved å kjøre
+install.packages("mapdata")
+
+#For å plotte med den karten i stedet bruker du
+map("worldHires",x=c(-10,50),y=c(20,50))
+
+#Det finnes også en veldig masse mere muligheter å plotte med forskjellig projeksjon, eller for å bytte farger på land og landgrenser. Mer om det i
+#?map
+
+#ggsave(filename = "MSLP_Plot_Paris_Final.eps", device = "eps")
+dev.copy2pdf(file="plot.pdf",out.type="cairo", width=10, height=7.5)
+#the PDF you can then convert to EPS with pdftops, Inkscape or Adobe Illustrator
